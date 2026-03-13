@@ -15,44 +15,48 @@ jobs:
 
   build-and-deploy:
 
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, Linux, X64]
 
     steps:
 
-    - name: checkout repository
-      users: actions/checkout@v4
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
-
-    # -------TEST STAGE-------------
+    # ---------- TEST STAGE ----------
 
     - name: Setup Node
-      users: actions/setup-node@v4
-      with: 
-      node-version: 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
 
-    - name Install Dependencies
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Run Tests
       run: npm test
 
-    #-------BUILD IMAGE---------------
+    # ---------- BUILD IMAGE ----------
 
     - name: Build Docker Image
       run: |
         docker build -t $REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }} .
 
-    #--------------- LOGIN TO HARBOR---------------
-    - name: login to harbor
+    # ---------- LOGIN HARBOR ----------
+
+    - name: Login to Harbor
       run: |
         echo "${{ secrets.HARBOR_PASSWORD }}" | docker login $REGISTRY \
         -u ${{ secrets.HARBOR_USER }} --password-stdin
 
-    #-----------------PUSH IMAGE--------------------
-    - name: push Docker Image
+    # ---------- PUSH IMAGE ----------
+
+    - name: Push Docker Image
       run: |
         docker push $REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }}
 
+    # ---------- DEPLOY TO K8S ----------
 
-    #----------------DEPLOY TO k8s -------------------------
-    - name: update kubernetes Deployment
+    - name: Update Kubernetes Deployment
       run: |
         kubectl set image deployment/node-app \
         node-app=$REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }} \
