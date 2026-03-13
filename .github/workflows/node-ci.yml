@@ -46,7 +46,8 @@ jobs:
     - name: Login to Harbor
       run: |
         echo "${{ secrets.HARBOR_PASSWORD }}" | docker login $REGISTRY \
-        -u ${{ secrets.HARBOR_USER }} --password-stdin
+        -u "${{ secrets.HARBOR_USER }}" \
+        --password-stdin
 
     # ---------- PUSH IMAGE ----------
 
