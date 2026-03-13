@@ -96,9 +96,13 @@ jobs:
     - name: Deploy to Kubernetes
       run: |
         ssh master@$CONTROL_PLANE << EOF
-        kubectl set image deployment/node-app \
-        node-app=$REGISTRY/$PROJECT/$IMAGE_NAME:$IMAGE_TAG \
-        -n $NAMESPACE
+
+        cd /home/master/k8s-project2/node-app
+
+        kubectl apply -f namespace.yaml
+        kubectl apply -f harbor-secret.yaml
+        kubectl apply -f deployment.yaml
+        kubectl apply -f service.yaml
 
         kubectl rollout status deployment/node-app -n $NAMESPACE
         EOF
