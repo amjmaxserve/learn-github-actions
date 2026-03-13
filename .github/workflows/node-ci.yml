@@ -10,6 +10,7 @@ env:
   PROJECT: node-devops
   IMAGE_NAME: node-app
   NAMESPACE: node-app
+  CONTROL_PLANE: 192.168.29.111
 
 jobs:
 
@@ -19,46 +20,91 @@ jobs:
 
     steps:
 
+    # -----------------------------
+    # Checkout Code
+    # -----------------------------
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    # ---------- TEST STAGE ----------
-
+    # -----------------------------
+    # Setup Node
+    # -----------------------------
     - name: Setup Node
       uses: actions/setup-node@v4
       with:
         node-version: 20
 
+    # -----------------------------
+    # Install Dependencies
+    # -----------------------------
     - name: Install Dependencies
       run: npm install
 
+    # -----------------------------
+    # Run Tests
+    # -----------------------------
     - name: Run Tests
       run: npm test
 
-    # ---------- BUILD IMAGE ----------
+    # -----------------------------
+    # Set Image Tag
+    # -----------------------------
+    - name: Set Image Tag
+      run: echo "IMAGE_TAG=${GITHUB_SHA}" >> $GITHUB_ENV
 
+    # -----------------------------
+    # Build Docker Image
+    # -----------------------------
     - name: Build Docker Image
       run: |
-        docker build -t $REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }} .
+        docker build -t $REGISTRY/$PROJECT/$IMAGE_NAME:$IMAGE_TAG .
 
-    # ---------- LOGIN HARBOR ----------
-
+    # -----------------------------
+    # Harbor Login
+    # -----------------------------
     - name: Login to Harbor
+      env:
+        HARBOR_USER: ${{ secrets.HARBOR_USER }}
+        HARBOR_PASSWORD: ${{ secrets.HARBOR_PASSWORD }}
       run: |
-        echo "${{ secrets.HARBOR_PASSWORD }}" | docker login $REGISTRY \
-        -u "${{ secrets.HARBOR_USER }}" \
+        echo "$HARBOR_PASSWORD" | docker login $REGISTRY \
+        --username "$HARBOR_USER" \
         --password-stdin
 
-    # ---------- PUSH IMAGE ----------
-
+    # -----------------------------
+    # Push Docker Image
+    # -----------------------------
     - name: Push Docker Image
       run: |
-        docker push $REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }}
+        docker push $REGISTRY/$PROJECT/$IMAGE_NAME:$IMAGE_TAG
 
-    # ---------- DEPLOY TO K8S ----------
-
-    - name: Update Kubernetes Deployment
+    # -----------------------------
+    # Setup SSH Key
+    # -----------------------------
+    - name: Setup SSH Key
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       run: |
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $CONTROL_PLANE >> ~/.ssh/known_hosts
+
+    # -----------------------------
+    # Deploy to Kubernetes Control Plane
+    # -----------------------------
+    - name: Deploy to Kubernetes
+      run: |
+        ssh master@$CONTROL_PLANE << EOF
         kubectl set image deployment/node-app \
-        node-app=$REGISTRY/$PROJECT/$IMAGE_NAME:${{ github.sha }} \
+        node-app=$REGISTRY/$PROJECT/$IMAGE_NAME:$IMAGE_TAG \
         -n $NAMESPACE
+
+        kubectl rollout status deployment/node-app -n $NAMESPACE
+        EOF
+
+    # -----------------------------
+    # Logout Harbor
+    # -----------------------------
+    - name: Logout Harbor
+      run: docker logout $REGISTRY
